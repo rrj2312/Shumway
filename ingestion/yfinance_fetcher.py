@@ -10,17 +10,12 @@ log = logging.getLogger(__name__)
 
 
 def quarter_label(dt) -> str:
-    """Convert a datetime to 'YYYY-QN' string. E.g. 2023-04-01 → '2023-Q1'"""
     q = (dt.month - 1) // 3 + 1
     return f"{dt.year}-Q{q}"
 
 
 def fetch_quarterly_financials(ticker_symbol: str, company_id: str) -> int:
-    """
-    Pull income statement, balance sheet, cash flow from yfinance.
-    Stores each line item as a row in raw_financials.
-    Returns number of rows upserted.
-    """
+
     ticker = yf.Ticker(ticker_symbol)
     rows_written = 0
 
@@ -36,7 +31,6 @@ def fetch_quarterly_financials(ticker_symbol: str, company_id: str) -> int:
                 log.warning(f"[{company_id}] No {stmt_type} data from yfinance")
                 continue
 
-            # yfinance returns dates as columns, line items as index
             for col in df.columns:
                 quarter = quarter_label(col)
                 for line_item, value in df[col].items():
@@ -56,11 +50,7 @@ def fetch_quarterly_financials(ticker_symbol: str, company_id: str) -> int:
 
 
 def fetch_price_history(ticker_symbol: str, company_id: str, period: str = "5y") -> int:
-    """
-    Pull daily OHLCV from yfinance.
-    Computes approximate market cap from Close × shares outstanding.
-    Returns number of rows upserted.
-    """
+
     ticker = yf.Ticker(ticker_symbol)
     hist = ticker.history(period=period)
 
@@ -68,7 +58,6 @@ def fetch_price_history(ticker_symbol: str, company_id: str, period: str = "5y")
         log.warning(f"[{company_id}] No price history returned")
         return 0
 
-    # shares_outstanding may not always be available; fall back to None
     info = ticker.fast_info
     shares = getattr(info, "shares", None)
 
@@ -100,7 +89,6 @@ def fetch_price_history(ticker_symbol: str, company_id: str, period: str = "5y")
 
 
 def fetch_nifty500(period: str = "5y") -> int:
-    """Fetch Nifty 500 index daily closes for benchmark computations."""
     ticker = yf.Ticker(NIFTY500_TICKER)
     hist = ticker.history(period=period)
 
@@ -124,7 +112,6 @@ def fetch_nifty500(period: str = "5y") -> int:
 
 
 def run_full_ingestion():
-    """Ingest all companies in the watchlist. Called by APScheduler or manually."""
     log.info("=== Starting full ingestion run ===")
     fetch_nifty500()
 
