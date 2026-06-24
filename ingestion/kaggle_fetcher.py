@@ -26,6 +26,9 @@ KAGGLE_NAME_MAP = {
     "TCS_NS":        "Tata Consultancy Services Ltd",
     "NESTLEIND_NS":  "Nestle India Ltd",
     "HINDUNILVR_NS": "Hindustan Unilever Ltd",
+    "JETAIRWAYS_NS": "Jet Airways (India) Ltd",
+    "CGPOWER_NS":    "CG Power _ Industrial Solutions Ltd",
+    "FRETAIL_NS":    "Future Retail Ltd",
     # Distress-case companies not in the live watchlist but needed for labels:
     "RELCAPITAL_NS": "Reliance Capital Ltd",
 }

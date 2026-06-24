@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import shap
@@ -9,13 +8,14 @@ from model.train import (
 )
 from features.panel import build_panel
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 
 def classify_risk_tier(prob: float, red_signal_count: int) -> str:
-    if prob >= 0.60 or red_signal_count >= 7:
+    if prob >= 0.60 or red_signal_count >= 4:
         return "HIGH"
-    elif prob >= 0.30 or red_signal_count >= 4:
+    elif prob >= 0.30 or red_signal_count >= 2:
         return "ELEVATED"
     return "LOW"
 
@@ -25,10 +25,8 @@ def count_red_signals(features: dict) -> int:
     checks = [
         (features.get("interest_coverage"), lambda v: v < 1.0),
         (features.get("leverage"),           lambda v: v > 0.85),
-        (features.get("current_ratio"),       lambda v: v < 1.0),
         (features.get("cf_divergence"),       lambda v: v < -0.05),
         (features.get("roe"),                 lambda v: v < -0.05),
-        (features.get("gross_margin"),        lambda v: v < 0.05),
         (features.get("return_volatility"),   lambda v: v > 0.04),
     ]
     for value, condition in checks:
@@ -40,9 +38,7 @@ def count_red_signals(features: dict) -> int:
                 pass
     return red
 
-
 def score_all_companies():
-   
     model, scaler = load_model()
     panel = build_panel()
 
@@ -50,18 +46,17 @@ def score_all_companies():
         log.error("Empty panel — nothing to score")
         return
 
-    # Get latest quarter per company
     latest = panel.sort_values("quarter").groupby("company_id").last().reset_index()
 
-    # Prepare features
-    X, y, company_ids, quarters, df_clean = prepare_training_data(latest)
-
+    X, y, company_ids, quarters, df_clean = prepare_training_data(latest, fit_bounds=False)
     if X.empty:
         log.error("No scoreable rows after feature prep")
         return
 
     X_scaled = scaler.transform(X)
     X_scaled_df = pd.DataFrame(X_scaled, columns=FEATURE_COLS, index=X.index)
+
+    probabilities = model.predict_proba(X_scaled_df)[:, 1]   # column 1 = P(distress=1)
 
     # SHAP values for interpretability
     try:
@@ -72,14 +67,13 @@ def score_all_companies():
         log.warning(f"SHAP computation failed: {e}")
         shap_df = None
 
-    # Predict
-    probabilities = model.predict(X_scaled_df)
 
     with get_connection() as conn:
         for idx, (row_idx, features_row) in enumerate(X_scaled_df.iterrows()):
             company_id = company_ids.iloc[idx]
             quarter    = quarters.iloc[idx]
-            prob       = float(probabilities.iloc[idx])
+            prob       = float(probabilities[idx])
+            ...
 
             # Get unscaled features for signal counting
             raw_features = {col: X.iloc[idx][col] for col in FEATURE_COLS}
@@ -107,8 +101,7 @@ def score_all_companies():
                     scored_at=CURRENT_TIMESTAMP
             """, (company_id, quarter, prob, tier, score_delta, red_count))
 
-            log.info(f"[{company_id}/{quarter}] prob={prob:.3f} tier={tier} red={red_count}")
-
+            log.info(f"[{company_id}/{quarter}] prob={prob:.5f} tier={tier} red={red_count}")
 
 if __name__ == "__main__":
     score_all_companies()

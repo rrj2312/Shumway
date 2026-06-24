@@ -6,17 +6,17 @@ log = logging.getLogger(__name__)
 
 
 def get_stmt_values(company_id: str, quarter: str, stmt_type: str) -> dict:
-   
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT line_item, value FROM raw_financials
             WHERE company_id=? AND quarter=? AND stmt_type=?
         """, (company_id, quarter, stmt_type)).fetchall()
 
-    return {
-        row["line_item"].lower().replace(" ", "_"): row["value"]
-        for row in rows
-    }
+    result = {}
+    for row in rows:
+        key = row["line_item"].lower().replace(" ", "_").replace("%", "pct").strip("_")
+        result[key] = row["value"]
+    return result
 
 
 def safe_div(numerator, denominator, default=None):
@@ -29,100 +29,65 @@ def safe_div(numerator, denominator, default=None):
 
 
 def compute_accounting_features(company_id: str, quarter: str) -> dict:
-   
     inc = get_stmt_values(company_id, quarter, "income")
     bal = get_stmt_values(company_id, quarter, "balance")
     cf  = get_stmt_values(company_id, quarter, "cashflow")
 
-    def pick(*keys, source):
-        for k in keys:
-            v = source.get(k)
-            if v is not None:
-                return v
-        return None
+    revenue           = inc.get("revenue")
+    interest_exp      = inc.get("interest")
+    net_income        = inc.get("net_profit")
+    profit_before_tax = inc.get("profit_before_tax")
 
-    ebit = pick("ebit", "operating_income", "operating_profit", source=inc)
-    interest_exp = pick(
-        "interest_expense", "finance_cost", "finance_costs",
-        "interest_and_finance_charges", source=inc
-    )
-    net_income = pick(
-        "net_income", "profit_after_tax", "net_profit",
-        "profit_loss_for_period", source=inc
-    )
-    total_assets = pick("total_assets", "total_asset", source=bal)
-    total_liabilities = pick(
-        "total_liabilities", "total_liabilities_net_minority_interest",
-        "total_debt", source=bal
-    )
-    total_equity = pick(
-        "total_equity_gross_minority_interest",
-        "stockholders_equity", "shareholders_equity",
-        "total_stockholder_equity", source=bal
-    )
-    current_assets = pick("current_assets", "total_current_assets", source=bal)
-    current_liabilities = pick(
-        "current_liabilities", "total_current_liabilities", source=bal
-    )
-    revenue = pick("total_revenue", "revenue", "net_sales", "total_income", source=inc)
-    gross_profit = pick("gross_profit", source=inc)
-    op_cashflow = pick(
-        "operating_cash_flow", "cash_flow_from_operations",
-        "net_cash_provided_by_operating_activities", source=cf
-    )
-    total_debt_now = pick(
-        "total_debt", "long_term_debt", "long_term_debt_and_capital_lease_obligation",
-        source=bal
-    )
+    # Kaggle's "Total Liabilities" = Liabilities + Equity (balance sheet identity),
+    # NOT liabilities alone. Use the real components instead.
+    borrowings         = bal.get("borrowings")
+    other_liabilities  = bal.get("other_liabilities")
+    equity_capital     = bal.get("equity_capital")
+    reserves           = bal.get("reserves")
+    total_assets       = bal.get("total_assets")   # = total liabilities + equity, used as a size denominator only
 
-    #Shumway model variables
+    # Real liabilities = borrowings + other liabilities (excludes equity)
+    real_liabilities = None
+    if borrowings is not None or other_liabilities is not None:
+        real_liabilities = (borrowings or 0) + (other_liabilities or 0)
 
-    # 1. Profitability: Net Income / Total Assets
+    # Real equity = equity capital + reserves
+    total_equity = None
+    if equity_capital is not None or reserves is not None:
+        total_equity = (equity_capital or 0) + (reserves or 0)
+
+    op_cashflow = cf.get("cash_from_operating_activity")
+
+    # --- Shumway model variables ---
     profitability = safe_div(net_income, total_assets)
 
-    # 2. Leverage: Total Liabilities / Total Assets
-    leverage = safe_div(total_liabilities, total_assets)
+    # Leverage: real liabilities (debt) / total assets — NOT liabilities/liabilities
+    leverage = safe_div(real_liabilities, total_assets)
 
-    # 3. CF Divergence: (Net Profit - Operating CF) / Total Assets
     cf_divergence = None
     if net_income is not None and op_cashflow is not None and total_assets:
         cf_divergence = (net_income - op_cashflow) / total_assets
 
-    # dashboard signals
+    # --- Dashboard signals ---
+    ebit_proxy = None
+    if profit_before_tax is not None and interest_exp is not None:
+        ebit_proxy = profit_before_tax + interest_exp
+    interest_coverage = safe_div(ebit_proxy, interest_exp)
 
-    # Signal 1: Interest Coverage Ratio = EBIT / Interest Expense
-    interest_coverage = safe_div(ebit, interest_exp)
+    # Debt/Equity: now uses real liabilities and real equity
+    debt_equity = safe_div(real_liabilities, total_equity)
+    roe         = safe_div(net_income, total_equity)
 
-    # Signal 2/3: Debt/Equity (absolute) — trend computed at panel level
-    debt_equity = safe_div(total_liabilities, total_equity)
-
-    # Signal 4: Current Ratio
-    current_ratio = safe_div(current_assets, current_liabilities)
-
-    # Signal 5: CF vs Profit divergence — already computed above as cf_divergence
-
-    # Signal 6: ROE = Net Income / Total Equity
-    roe = safe_div(net_income, total_equity)
-
-    # Signal 7: Gross Margin
-    gross_margin = safe_div(gross_profit, revenue)
-
-    revenue_val = revenue
-    debt_val = total_debt_now
+    current_ratio = None  # not computable from Kaggle schema
+    gross_margin  = None  # not computable from Kaggle schema
 
     return {
-        "profitability":    profitability,
-        "leverage":         leverage,
-        "cf_divergence":    cf_divergence,
-
+        "profitability":     profitability,
+        "leverage":          leverage,
+        "cf_divergence":     cf_divergence,
         "interest_coverage": interest_coverage,
         "debt_equity":       debt_equity,
         "current_ratio":     current_ratio,
         "roe":               roe,
         "gross_margin":      gross_margin,
-
-        "_revenue":          revenue_val,
-        "_debt":             debt_val,
-        "_total_assets":     total_assets,
-        "_net_income":       net_income,
     }

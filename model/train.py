@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.preprocessing import StandardScaler
 import logging
+from sklearn.linear_model import LogisticRegression
 
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
@@ -16,27 +17,35 @@ MODEL_PATH = Path(__file__).parent / "shumway_model.pkl"
 SCALER_PATH = Path(__file__).parent / "scaler.pkl"
 
 FEATURE_COLS = [
-    "profitability", "leverage", "cf_divergence",
-    "interest_coverage", "current_ratio", "roe", "gross_margin",
-    "rel_size", "excess_return", "return_volatility",
+    "profitability", "leverage", "interest_coverage", "cf_divergence", "roe",
 ]
 
 
-def prepare_training_data(panel: pd.DataFrame):
-   
-    # Drop rows with too many missing features
-    df = panel.copy()
-    df = df.dropna(subset=FEATURE_COLS, thresh=int(len(FEATURE_COLS) * 0.3))
+WINSORIZE_BOUNDS_PATH = Path(__file__).parent / "winsorize_bounds.pkl"
 
-    # Fill remaining NaN with column median
+
+def prepare_training_data(panel: pd.DataFrame, fit_bounds: bool = True):
+
+    df = panel.copy()
+    df = df.dropna(subset=FEATURE_COLS, thresh=5)
+
     for col in FEATURE_COLS:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
         median = df[col].median()
         df[col] = df[col].fillna(median)
 
-    # Winsorise at 1st/99th percentile
+    if fit_bounds:
+        bounds = {}
+        for col in FEATURE_COLS:
+            bounds[col] = (df[col].quantile(0.01), df[col].quantile(0.99))
+        with open(WINSORIZE_BOUNDS_PATH, "wb") as f:
+            pickle.dump(bounds, f)
+    else:
+        with open(WINSORIZE_BOUNDS_PATH, "rb") as f:
+            bounds = pickle.load(f)
+
     for col in FEATURE_COLS:
-        lower = df[col].quantile(0.01)
-        upper = df[col].quantile(0.99)
+        lower, upper = bounds[col]
         df[col] = df[col].clip(lower, upper)
 
     X = df[FEATURE_COLS]
@@ -47,38 +56,34 @@ def prepare_training_data(panel: pd.DataFrame):
     return X, y, company_ids, quarters, df
 
 
+
 def train_shumway_model(panel: pd.DataFrame):
-   
+
     X, y, company_ids, quarters, df_clean = prepare_training_data(panel)
 
     if y.sum() < 3:
         log.error(f"Only {y.sum()} distress events — need more positive examples")
-        log.error("Add more companies to watchlist or expand historical window")
         return None, None, None
 
     log.info(f"Training on {len(X)} observations, {y.sum()} distress events")
 
-    # Standardise
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    X_scaled_df = pd.DataFrame(X_scaled, columns=FEATURE_COLS, index=X.index)
 
-    # Build training DataFrame for statsmodels
-    train_df = X_scaled_df.copy()
-    train_df["distress"] = y.values
-    train_df["company_id"] = company_ids.values
-
-    # Statsmodels formula
-    formula = "distress ~ " + " + ".join(FEATURE_COLS)
-
-    model = logit(formula, data=train_df).fit(
-        cov_type="cluster",
-        cov_kwds={"groups": train_df["company_id"]},
-        maxiter=200,
-        disp=False,
+    model = LogisticRegression(
+        penalty="l2",
+        C=0.05,                  
+        class_weight="balanced",
+        max_iter=1000,
+        solver="lbfgs",
     )
+    model.fit(X_scaled, y)
 
-    log.info("\n" + str(model.summary()))
+    log.info("Fitted L2-regularized logistic regression (sklearn)")
+    log.info("Coefficients:")
+    for feat, coef in zip(FEATURE_COLS, model.coef_[0]):
+        log.info(f"  {feat:<20} {coef:+.4f}")
+    log.info(f"  Intercept: {model.intercept_[0]:+.4f}")
 
     return model, scaler, df_clean
 
@@ -89,8 +94,8 @@ def evaluate_model(model, scaler, panel: pd.DataFrame):
 
     X, y, company_ids, quarters, df_clean = prepare_training_data(panel)
 
-    train_mask = quarters < "2020-Q1"
-    test_mask  = quarters >= "2020-Q1"
+    train_mask = quarters.astype(int) < 2020
+    test_mask  = quarters.astype(int) >= 2020
 
     X_train, y_train = X[train_mask], y[train_mask]
     X_test,  y_test  = X[test_mask],  y[test_mask]
@@ -99,24 +104,24 @@ def evaluate_model(model, scaler, panel: pd.DataFrame):
         log.warning("Test set has no distress events — expand date range or watchlist")
         return {}
 
+    if y_train.sum() == 0:
+        log.warning("Training set has no distress events — cannot fit evaluation model")
+        return {}
+
     scaler_eval = StandardScaler()
     X_train_scaled = scaler_eval.fit_transform(X_train)
     X_test_scaled  = scaler_eval.transform(X_test)
 
-    train_df = pd.DataFrame(X_train_scaled, columns=FEATURE_COLS)
-    train_df["distress"] = y_train.values
-    train_df["company_id"] = company_ids[train_mask].values
-
-    formula = "distress ~ " + " + ".join(FEATURE_COLS)
-    eval_model = logit(formula, data=train_df).fit(
-        cov_type="cluster",
-        cov_kwds={"groups": train_df["company_id"]},
-        maxiter=200,
-        disp=False,
+    eval_model = LogisticRegression(
+        penalty="l2",
+        C=0.05,
+        class_weight="balanced",
+        max_iter=1000,
+        solver="lbfgs",
     )
+    eval_model.fit(X_train_scaled, y_train)
 
-    test_df = pd.DataFrame(X_test_scaled, columns=FEATURE_COLS)
-    y_pred = eval_model.predict(test_df)
+    y_pred = eval_model.predict_proba(X_test_scaled)[:, 1]
 
     auc_roc = roc_auc_score(y_test, y_pred)
     auc_pr  = average_precision_score(y_test, y_pred)
@@ -125,20 +130,14 @@ def evaluate_model(model, scaler, panel: pd.DataFrame):
     log.info(f"Out-of-sample AUC-PR:          {auc_pr:.4f}")
     log.info(f"Test set size:                 {len(X_test)}")
     log.info(f"Distress events in test set:   {y_test.sum()}")
+    log.info(f"Distress events in train set:  {y_train.sum()}")
 
-    # Altman Z-score baseline (simplified, for non-financial companies)
-    # Z = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 1.0*X5
-    # X1 = Working Capital/Assets ≈ (current_ratio-1) proxy
-    # X3 = EBIT/Assets ≈ profitability proxy
-    # X5 = Revenue/Assets (no revenue in features — skip full Altman)
-    # Using simplified version with available features as rough baseline
     altman_proxy = (
-        1.2 * df_clean.loc[test_mask.values, "current_ratio"].fillna(0)
-        + 1.4 * df_clean.loc[test_mask.values, "roe"].fillna(0)
+        1.4 * df_clean.loc[test_mask.values, "roe"].fillna(0)
         + 3.3 * df_clean.loc[test_mask.values, "profitability"].fillna(0)
+        - 0.6 * df_clean.loc[test_mask.values, "leverage"].fillna(0)
     )
-    # Altman predicts Z<1.8 = distress, so invert: lower Z = higher distress prob
-    altman_distress_score = -altman_proxy  
+    altman_distress_score = -altman_proxy
 
     try:
         altman_auc = roc_auc_score(y_test, altman_distress_score)
@@ -152,6 +151,7 @@ def evaluate_model(model, scaler, panel: pd.DataFrame):
         "altman_baseline_auc": round(altman_auc, 4) if altman_auc else None,
         "test_size": len(X_test),
         "distress_events_in_test": int(y_test.sum()),
+        "distress_events_in_train": int(y_train.sum()),
     }
     return metrics
 

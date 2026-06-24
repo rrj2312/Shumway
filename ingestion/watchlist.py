@@ -19,9 +19,13 @@ WATCHLIST = [
     ("TCS.NS",          "TCS",                  "IT",       False),
     ("NESTLEIND.NS",    "Nestle India",         "FMCG",     False),
     ("HINDUNILVR.NS",   "HUL",                  "FMCG",     False),
+
+    ("JETAIRWAYS.NS", "Jet Airways",  "Aviation", False),
+    ("CGPOWER.NS",    "CG Power",     "Industrials", False),
+    ("FRETAIL.NS",    "Future Retail","Retail", False),
 ]
 
-NIFTY500_TICKER = "^CNX500"
+NIFTY500_TICKER = "^NSEI"
 
 def get_tickers():
     return [t[0] for t in WATCHLIST]

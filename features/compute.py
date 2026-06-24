@@ -1,8 +1,9 @@
 import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 from database.db import get_connection
 from features.accounting import compute_accounting_features
 from features.market import compute_market_features
-from ingestion.watchlist import WATCHLIST
 
 log = logging.getLogger(__name__)
 
@@ -66,17 +67,35 @@ def compute_and_store_features(company_id: str, quarter: str) -> bool:
         return False
 
 
+def get_all_ingested_company_ids() -> list[str]:
+    """
+    Returns every distinct company_id present in raw_financials,
+    regardless of whether it came from the curated WATCHLIST or
+    the bulk Kaggle sample. This avoids needing to maintain two
+    separate company lists in sync.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT company_id FROM raw_financials
+            WHERE stmt_type = 'income'
+        """).fetchall()
+    return [r["company_id"] for r in rows]
+
+
 def run_full_feature_computation():
+    """Recompute features for every company that has ingested data."""
     log.info("=== Starting feature computation ===")
     total, success = 0, 0
-    for ticker_symbol, *_ in WATCHLIST:
-        company_id = ticker_symbol.replace(".", "_")
+    company_ids = get_all_ingested_company_ids()
+    log.info(f"Found {len(company_ids)} companies with ingested data")
+
+    for company_id in company_ids:
         quarters = get_available_quarters(company_id)
-        log.info(f"[{company_id}] Computing features for {len(quarters)} quarters")
         for quarter in quarters:
             total += 1
             if compute_and_store_features(company_id, quarter):
                 success += 1
+
     log.info(f"=== Feature computation complete: {success}/{total} succeeded ===")
 
 

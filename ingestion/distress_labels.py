@@ -4,11 +4,12 @@ import logging
 log = logging.getLogger(__name__)
 
 KNOWN_DISTRESS_EVENTS = [
-    ("YESBANK_NS",   "2020-Q4", "moratorium",        "RBI imposed moratorium 5 March 2020"),
-    ("DHFL_NS",      "2019-Q3", "default",            "DHFL defaulted on NCD payments June 2019"),
-    ("RELCAPITAL_NS","2021-Q3", "moratorium",         "RBI superseded Reliance Capital board Nov 2021"),
-    ("SUZLON_NS",    "2015-Q1", "rating_downgrade",   "CARE downgraded to D, restructuring 2015"),
-    ("ZEEL_NS",      "2023-Q3", "restructuring",      "Sony merger collapse, lender pressure"),
+    ("YESBANK_NS",    "2020", "moratorium",       "RBI imposed moratorium 5 March 2020"),
+    ("RELCAPITAL_NS", "2022", "moratorium",       "RBI superseded Reliance Capital board Nov 2021"),
+    ("SUZLON_NS",     "2015", "rating_downgrade", "CARE downgraded to D, restructuring 2015"),
+    ("JETAIRWAYS_NS", "2019", "insolvency",       "Operations ceased April 2019, NCLT insolvency proceedings"),
+    ("CGPOWER_NS",    "2019", "fraud_disclosure", "Accounting fraud and governance crisis disclosed August 2019"),
+    ("FRETAIL_NS",    "2021", "default",          "Default on payments, insolvency proceedings initiated 2022 (FY2021 = latest available pre-event data)"),
 ]
 
 

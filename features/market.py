@@ -7,17 +7,9 @@ log = logging.getLogger(__name__)
 
 
 def get_quarter_date_range(quarter: str):
-    
-    year, q = quarter.split("-Q")
-    year = int(year)
-    q = int(q)
-    month_start = (q - 1) * 3 + 1
-    month_end = q * 3
-    start = f"{year}-{month_start:02d}-01"
-    if month_end == 12:
-        end = f"{year}-12-31"
-    else:
-        end = f"{year}-{month_end:02d}-{[0,31,28,31,30,31,30][month_end]}"
+    year = int(quarter)
+    start = f"{year - 1}-04-01"   
+    end   = f"{year}-03-31"       
     return start, end
 
 

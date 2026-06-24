@@ -7,7 +7,7 @@ log = logging.getLogger(__name__)
 
 FEATURE_COLS = [
     "profitability", "leverage", "cf_divergence",
-    "interest_coverage", "current_ratio", "roe", "gross_margin",
+    "interest_coverage", "roe",
     "rel_size", "excess_return", "return_volatility",
 ]
 
@@ -17,7 +17,7 @@ def build_panel() -> pd.DataFrame:
     with get_connection() as conn:
         features_df = pd.read_sql("""
             SELECT company_id, quarter, profitability, leverage, cf_divergence,
-                   interest_coverage, current_ratio, roe, gross_margin,
+                   interest_coverage, roe, gross_margin,
                    rel_size, excess_return, return_volatility
             FROM features
             ORDER BY company_id, quarter
