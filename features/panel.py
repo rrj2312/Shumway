@@ -13,12 +13,11 @@ FEATURE_COLS = [
 
 
 def build_panel() -> pd.DataFrame:
-
+ 
     with get_connection() as conn:
         features_df = pd.read_sql("""
             SELECT company_id, quarter, profitability, leverage, cf_divergence,
-                   interest_coverage, roe, gross_margin,
-                   rel_size, excess_return, return_volatility
+                   interest_coverage, roe, rel_size, excess_return, return_volatility
             FROM features
             ORDER BY company_id, quarter
         """, conn)
@@ -32,33 +31,40 @@ def build_panel() -> pd.DataFrame:
         log.error("No features found — run feature computation first")
         return pd.DataFrame()
 
-    panel = features_df.merge(distress_df, on=["company_id", "quarter"], how="left")
+    
+    distress_df = distress_df.copy()
+    distress_df["quarter"] = distress_df["quarter"].astype(int)
+    distress_df["target_quarter"] = (distress_df["quarter"] - 1).astype(str)
+    distress_df["quarter"] = distress_df["quarter"].astype(str)
+
+    lagged_labels = distress_df[["company_id", "target_quarter", "distress"]].rename(
+        columns={"target_quarter": "quarter"}
+    )
+
+    panel = features_df.merge(lagged_labels, on=["company_id", "quarter"], how="left")
     panel["distress"] = panel["distress"].fillna(0).astype(int)
 
-
-    distress_companies = distress_df[distress_df["distress"] == 1]["company_id"].unique()
+    distress_companies = distress_df["company_id"].unique()
+    original_event_year = dict(zip(distress_df["company_id"], distress_df["quarter"]))
 
     rows_to_keep = []
     for company_id, group in panel.groupby("company_id"):
         group = group.sort_values("quarter").reset_index(drop=True)
         if company_id in distress_companies:
-            # Find first distress quarter
-            distress_idx = group[group["distress"] == 1].index
-            if len(distress_idx) > 0:
-                # Keep all rows up to and including the distress quarter
-                group = group.iloc[: distress_idx[0] + 1]
+            event_year = original_event_year[company_id]
+            group = group[group["quarter"].astype(int) < int(event_year)]
         rows_to_keep.append(group)
 
     panel = pd.concat(rows_to_keep, ignore_index=True)
 
-    log.info(f"Panel built: {len(panel)} rows, {panel['distress'].sum()} distress events, "
+    log.info(f"Panel built (1-year-ahead prediction): {len(panel)} rows, "
+             f"{panel['distress'].sum()} distress events, "
              f"{panel['company_id'].nunique()} companies")
 
     return panel
 
 
 def describe_panel(panel: pd.DataFrame):
-    """Print a summary of the panel dataset."""
     print(f"\n{'='*50}")
     print(f"Panel dataset summary")
     print(f"{'='*50}")
