@@ -31,7 +31,19 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+from model.live_score import score_live_company
 
+@app.get("/company/live/{ticker}")
+def get_live_score(ticker: str):
+   
+    try:
+        result = score_live_company(ticker.upper())
+        return result
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e))
+    except Exception as e:
+        log.error(f"Live scoring failed for {ticker}: {e}", exc_info=True)
+        raise HTTPException(500, detail=f"Live scoring failed: {e}")
 
 def normalize_id(identifier: str) -> str:
   
