@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { formatCompanyName } from '@/lib/utils'
 import { api } from '@/lib/api'
-import { TrendingDown, AlertCircle, Home, Search } from 'lucide-react'
+import { TrendingDown, AlertCircle, Home, Search, Zap } from 'lucide-react'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -17,6 +17,12 @@ export function Sidebar() {
   const [showResults, setShowResults] = useState(false)
 
   const items = [
+    {
+      href: '/live',
+      label: 'Live Lookup',
+      icon: Zap,
+      active: pathname === '/live',
+    },
     {
       href: '/',
       label: 'Watchlist',

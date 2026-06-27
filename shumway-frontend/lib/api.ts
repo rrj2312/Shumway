@@ -61,6 +61,23 @@ export interface CompanyDashboard {
   known_distress_event: KnownDistressEvent | null;
 }
 
+export interface LiveScoreResult {
+  ticker: string;
+  as_of_quarter: string;
+  features: {
+    profitability: number | null;
+    leverage: number | null;
+    interest_coverage: number | null;
+    cf_divergence: number | null;
+    roe: number | null;
+  };
+  hazard_probability: number;
+  features_available: number;
+  note: string;
+}
+
+
+
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
@@ -75,4 +92,5 @@ export const api = {
   history:   (id: string) => apiFetch<{ history: HistoryEntry[] }>(`/company/${encodeURIComponent(id)}/history`),
   alerts:    (limit = 50) => apiFetch<AlertEntry[]>(`/alerts?limit=${limit}`),
   search:    (q: string)  => apiFetch<string[]>(`/search?q=${encodeURIComponent(q)}`),
+  liveScore: (ticker: string) => apiFetch<LiveScoreResult>(`/company/live/${encodeURIComponent(ticker)}`),
 };
