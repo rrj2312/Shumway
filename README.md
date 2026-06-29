@@ -7,10 +7,6 @@
 
 An early-warning system for corporate financial distress in Indian listed companies, built on Tyler Shumway's (2001) discrete-time hazard model. Shumway predicts the probability that a company enters financial distress in the **following fiscal year**, based on the current year's accounting ratios — using only information that would actually have been available at the time.
 
-**[Live demo →](https://shumway-frontend.vercel.app)** · **[API reference →](https://shumway.onrender.com/docs)**
-
-![Shumway watchlist dashboard](docs/screenshot-watchlist.png)
-
 ---
 
 ## Table of Contents
