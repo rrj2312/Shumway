@@ -51,7 +51,7 @@ Shumway tracks 169 NSE/BSE-listed Indian companies and computes a hazard score f
 
 | Layer | Tools |
 |---|---|
-| Historical data | [Kaggle](https://www.kaggle.com/) (annual financials, 4,492 companies) |
+| Historical data | [Kaggle](https://www.kaggle.com/datasets/sameerprogrammer/detailed-financial-data-of-4456-nse-and-bse-company?resource=download) (annual financials, 4,492 companies) |
 | Live data | [yfinance](https://github.com/ranaroussi/yfinance) |
 | Storage | SQLite |
 | Modeling | pandas, scikit-learn, statsmodels, SHAP |
@@ -266,12 +266,7 @@ Next.js (Vercel)
 - **The model cannot anticipate fraud- or governance-driven distress** as reliably as ratio-driven deterioration — CG Power's fraud-driven collapse scored only 0.479 (ELEVATED, not HIGH).
 - **`current_ratio` and `gross_margin`** from the original 12-signal specification are not computable from the Kaggle source and are excluded rather than approximated.
 - **Live yfinance scoring has inconsistent cash flow coverage** across companies; affected requests degrade gracefully to 4-of-5 features, with `features_available` explicitly returned.
-
-## Roadmap
-
-- [ ] Expand the positive class with additional verified Indian distress cases (Religare, Vakrangee, Reliance Home Finance, Alok Industries)
-- [ ] Add a validation gate for automated retraining (only replace the saved model if AUC and event count don't regress)
-- [ ] Source quarterly data for the historical distress window specifically, to support quarterly-resolution forecasting
+  
 
 ## Contributing
 
